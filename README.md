@@ -31,11 +31,11 @@ mitsuhashi:100000:65536
 #### 2. sudo権限が不要な設定とpodmanの起動確認
 以下のansible-playbookコマンドを実行します。sudo権限が不要な設定を行い、podmanの起動確認を行います。
 ```
-ansible-playbook -v -i localhost, -c local install_rootless_podman_by_root.yml
+ansible-playbook -v -i localhost, -c local install_rootless_podman_by_rootless.yml
 ```
 以下のように"Podman is working!"を表示されれば成功です。
 ```
-$ ansible-playbook -v -i localhost, -c local install_rootless_podman_by_root.yml
+$ ansible-playbook -v -i localhost, -c local install_rootless_podman_by_rootless.yml
 <中略>
 
 TASK [Run a test container with Podman] *************************************************************************************************************************************
