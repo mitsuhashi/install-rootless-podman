@@ -4,7 +4,7 @@ Ansible playbooks for installing rootless Podman on Ubuntu 24.04 LTS
 ### 前提
 
 - Ubuntu 24.04 LTSで動作します。Ubuntu 22.04 LTSでは動作しません。
-- PodmanをインストールしたいUbuntu OSに**Rootless Podmanを実行したユーザでログインした状態で実行**します。
+- PodmanをインストールしたいUbuntu OSに**Rootless Podmanを実行するユーザでログインした状態で実行**します。
 - インストールにAnsibleが必要です。インストールされていない場合は以下のコマンドでインストールします。
 ```
 sudo apt install ansible
