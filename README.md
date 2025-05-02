@@ -106,7 +106,6 @@ total 348
 
 ```
 $ podman exec -it mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
-mitsuhashi@vs88:~/install-rootless-podman/test_mongodb$ podman exec -it mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
 {
   db: 'test',
   collections: Long('0'),
