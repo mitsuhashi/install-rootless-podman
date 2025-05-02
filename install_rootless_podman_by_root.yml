@@ -1,0 +1,113 @@
+- name: Install and Configure Podman with Podman Compose using pipx on Ubuntu 24.04
+  hosts: all
+  become: yes
+  gather_facts: yes  # ansible_env を有効化
+  tasks:
+    - name: Get rootless user using whoami
+      set_fact:
+        rootless_user: "{{ lookup('pipe', 'whoami') }}"
+        rootless_user_uid: "{{ lookup('pipe', 'id -u') }}"
+        rootless_user_gid: "{{ lookup('pipe', 'id -g') }}"
+        subuid_file: /etc/subuid
+        subgid_file: /etc/subgid
+        default_range_start: 100000
+        range_size: 65536 
+
+    - name: Update package index
+      apt:
+        update_cache: yes
+
+    - name: Install required packages (Podman, crun, pipx, and dependencies)
+      apt:
+        name:
+          - podman
+          - crun
+          - pipx
+          - python3-venv  # pipx の実行に必要
+        state: present
+
+    - name: Ensure pipx is in PATH
+      shell: "pipx ensurepath"
+      become: no
+
+    - name: Install Podman Compose using pipx
+      shell: "pipx install podman-compose"
+      become: no
+
+    - name: Read existing subuid content
+      slurp:
+        path: "{{ subuid_file }}"
+      register: subuid_raw
+
+    - name: Decode subuid lines
+      set_fact:
+        subuid_lines: "{{ subuid_raw.content | b64decode | split('\n')  | reject('equalto', '') | list }}"
+
+    - name: Show subuid lines 
+      debug:
+        msg: "subuid_lines: {{ subuid_lines }}"
+
+    - name: Calculate next available subuid range start
+      set_fact:
+        subuid_range_start: >-
+          {{
+            (
+              subuid_lines
+              | map('regex_search', ':(\d+):\d+$', '\1')
+              | map('first')
+              | map('int')
+              + [default_range_start]
+            ) | max + range_size 
+          }}
+
+    - name: Show subuid_range_start 
+      debug:
+        msg: "subuid_range_start: {{ subuid_range_start }}"
+
+    - name: Check if subuid entry already exists for user
+      shell: grep -E "^{{ rootless_user }}:" {{ subuid_file }} || true
+      register: subuid_existing
+      changed_when: false
+
+    - name: Ensure /etc/subuid contains mapping for user
+      lineinfile:
+        path: "{{ subuid_file }}"
+        regexp: "^{{ rootless_user }}:"
+        line: "{{ rootless_user }}:{{ subuid_range_start }}:{{ range_size }}"
+        create: yes
+      when: subuid_existing.stdout == ""
+
+    - name: Read existing subgid content
+      slurp:
+        path: "{{ subgid_file }}"
+      register: subgid_raw
+
+    - name: Decode subgid lines
+      set_fact:
+        subgid_lines: "{{ subgid_raw.content | b64decode | split('\n') | reject('equalto', '') | list }}"
+
+    - name: Calculate next available subgid range start
+      set_fact:
+        subgid_range_start: >-
+          {{
+             (
+              subgid_lines
+              | map('regex_search', ':(\d+):\d+$', '\1')
+              | map('first')
+              | map('int')
+              + [default_range_start]
+            ) | max + range_size 
+          }}
+
+    - name: Check if subgid entry already exists for user
+      shell: grep -E "^{{ rootless_user }}:" {{ subgid_file }} || true
+      register: subgid_existing
+      changed_when: false
+
+    - name: Ensure /etc/subgid contains mapping for user
+      lineinfile:
+        path: "{{ subgid_file }}"
+        regexp: "^{{ rootless_user }}:"
+        line: "{{ rootless_user }}:{{ subgid_range_start }}:{{ range_size }}"
+        create: yes
+      when: subgid_existing.stdout == ""
