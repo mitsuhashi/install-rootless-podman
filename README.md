@@ -21,6 +21,7 @@ ansible-playbook -v -i localhost, -c local install_rootless_podman_by_root.yml
 - パッケージのインストール(podman, crun, pipx, python3-venv)
 - Podmanを実行するユーザの linger 有効化
 - Podmanを実行するユーザの systemd user manager 起動
+- `systemctl --user` が rootless ユーザの D-Bus に接続できることの確認
 - Podmanを実行するユーザの/etc/subuidと/etc/subgidへのエントリの追加
 （例）mitsuhashiユーザの場合
 ```
@@ -143,6 +144,13 @@ cd ~/install-rootless-podman/test_mongodb
 ```
 
 スクリプトは以下を実行します。
+
+`su` や `sudo -u` などでログインセッション外から実行する場合は、事前に以下を設定してください。通常のSSHログインやコンソールログインで rootless ユーザとして実行する場合は不要です。
+
+```
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR}/bus
+```
 
 - `~/.config/systemd/user/<service-name>.service` を作成
 - `systemctl --user daemon-reload` を実行

@@ -7,6 +7,8 @@
       set_fact:
         rootless_user: "{{ lookup('pipe', 'whoami') }}"
         rootless_user_uid: "{{ lookup('pipe', 'id -u') }}"
+        rootless_runtime_dir: "/run/user/{{ lookup('pipe', 'id -u') }}"
+        rootless_dbus_session_bus_address: "unix:path=/run/user/{{ lookup('pipe', 'id -u') }}/bus"
         subuid_file: /etc/subuid
         subgid_file: /etc/subgid
         default_range_start: 100000
@@ -40,6 +42,21 @@
       systemd:
         name: "user@{{ rootless_user_uid }}.service"
         state: started
+
+    - name: Wait for rootless user D-Bus session bus
+      wait_for:
+        path: "{{ rootless_runtime_dir }}/bus"
+        state: present
+        timeout: 10
+
+    - name: Verify rootless systemd user manager connection
+      command: systemctl --user status --no-pager
+      become: no
+      environment:
+        XDG_RUNTIME_DIR: "{{ rootless_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "{{ rootless_dbus_session_bus_address }}"
+      register: systemd_user_status
+      changed_when: false
 
     - name: Read existing subuid content
       slurp:
