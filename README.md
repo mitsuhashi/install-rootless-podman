@@ -196,26 +196,36 @@ systemctl --user disable --now podman-compose-mongodb.service
 `podman-compose.yml` を削除する場合は、先に自動起動を無効化してコンテナを停止します。
 `podman-compose.yml` を先に削除すると、`podman-compose down` や systemd の `ExecStop` が失敗する場合があります。
 
-`test_mongodb` の例では以下の順序で実行します。サービス名を変更して登録した場合は、`podman-compose-mongodb.service` を実際のservice名に置き換えてください。
+`test_mongodb` の例では以下を実行します。サービス名を変更して登録した場合は、実際のservice名を引数に指定してください。
 
 ```
-systemctl --user disable --now podman-compose-mongodb.service
 cd ~/install-rootless-podman/test_mongodb
-podman-compose --in-pod false down
-rm -f ~/.config/systemd/user/podman-compose-mongodb.service
-systemctl --user daemon-reload
+./podman_disable_service.sh podman-compose-mongodb
+```
+
+引数を省略した場合も、service名は `podman-compose-mongodb.service` になります。
+
+```
+./podman_disable_service.sh
+```
+
+スクリプトは以下を実行します。
+
+- `systemctl --user disable --now <service-name>.service` を実行
+- `podman-compose --in-pod false down` を実行
+- `~/.config/systemd/user/<service-name>.service` を削除
+- `systemctl --user daemon-reload` を実行
+
+MongoDBのデータも削除する場合のみ、`--remove-data` を指定します。
+
+```
+./podman_disable_service.sh --remove-data podman-compose-mongodb
 ```
 
 その後、不要であれば `podman-compose.yml` を削除します。
 
 ```
 rm -f ~/install-rootless-podman/test_mongodb/podman-compose.yml
-```
-
-MongoDBのデータも削除する場合のみ、データディレクトリを削除します。
-
-```
-rm -rf ~/install-rootless-podman/test_mongodb/data/mongodb
 ```
 
 削除後に状態を確認します。
