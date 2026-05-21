@@ -20,10 +20,6 @@
       shell: "pipx install podman-compose"
       become: no
 
-    - name: Ensure Podman service is enabled for rootless user
-      command: loginctl enable-linger "{{ rootless_user }}"
-      become: no  # Rootless user で実行
-
     - name: Create Podman config directory
       file:
         path: "/home/{{ rootless_user }}/.config/containers"

@@ -34,6 +34,9 @@
       shell: "pipx install podman-compose"
       become: no
 
+    - name: Enable lingering for rootless user
+      command: loginctl enable-linger "{{ rootless_user }}"
+
     - name: Read existing subuid content
       slurp:
         path: "{{ subuid_file }}"
