@@ -52,92 +52,181 @@ localhost                  : ok=17   changed=4    unreachable=0    failed=0    s
 $
 ```
 
-### 動作確認テスト
+### podman-compose.ymlをOS再起動時に自動起動する設定
 
-test_mongodb以下のスクリプトを使ってmongodbの起動テストができます。
+`podman-compose up -d` で起動しただけでは、OS再起動後に自動で再起動されません。
+自動起動したい `podman-compose.yml` ごとに、rootlessユーザの systemd user service を作成して有効化します。
 
-#### 1. test_mongodb/podman_run_mongodb.shの確認
+このリポジトリでは、`test_mongodb` を podman-compose のサンプルとして用意しています。
+以下の作業は、Podmanを実行するrootlessユーザで実行します。sudo権限は不要です。
+
+#### 1. test_mongodb/podman-compose.ymlの確認
 
 ```
-~/install-rootless-podman/test_mongodb$$ cat podman_run_mongodb.sh
+cd ~/install-rootless-podman/test_mongodb
+cat podman-compose.yml
+```
+
+`test_mongodb/podman-compose.yml` では、MongoDBをrootless Podmanで起動します。
+
+```yaml
+services:
+  mongodb:
+    image: docker.io/library/mongo:7.0
+    container_name: mongodb_rootless
+    userns_mode: keep-id
+    ports:
+      - "37017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    volumes:
+      - ./data/mongodb:/data/db:Z
+    restart: unless-stopped
+```
+
+- `userns_mode: keep-id` でコンテナ内のUID/GIDをホストのUID/GIDと対応させます。
+- DBファイルは `test_mongodb/data/mongodb` 以下に作成されます。
+- `restart: unless-stopped` はコンテナ異常終了時の再起動用です。OS再起動後の起動には、後述の systemd user service が必要です。
+
+#### 2. podman-composeでMongoDBを起動する
+
+```
+cd ~/install-rootless-podman/test_mongodb
+./podman_run_mongodb.sh
+```
+
+実行している内容は以下です。
+
+```
+#!/bin/sh
+set -eu
+
 mkdir -p ./data/mongodb
-
-podman run -d \
-  --name mongodb_rootless \
-  --userns=keep-id \
-  -v ./data/mongodb:/data/db:Z \
-  -p 37017:37017 \
-  -e MONGO_INITDB_ROOT_USERNAME=root \
-  -e MONGO_INITDB_ROOT_PASSWORD=example \
-  docker.io/library/mongo:7.0
-mitsuhashi@vs88:~/install-rootless-podman/test_mongodb$
-```
-- userns=keep-id でコンテナ内のUID/GIDをホストのUID/GIDと一致させます。
-- DBファイルは./data/mongodb以下に作成されます。
-
-#### 2. podman_run_mongodb.shの実行
-
-```
-~/install-rootless-podman/test_mongodb$ ./podman_run_mongodb.sh
-0536d66eaac4a153012920a1bad4d8dcb5bf76b14b28a5673be99154f6b936f3
+podman-compose up -d
 ```
 
-#### 3. podman psでコンテナが起動していることを確認
+`podman ps` でコンテナが起動していることを確認します。
 
 ```
-~/install-rootless-podman/test_mongodb$ podman ps
-CONTAINER ID  IMAGE                        COMMAND     CREATED        STATUS        PORTS                     NAMES
-0536d66eaac4  docker.io/library/mongo:7.0  mongod      4 seconds ago  Up 5 seconds  0.0.0.0:37017->37017/tcp  mongodb_rootless
-~/install-rootless-podman/test_mongodb$
+podman ps
 ```
 
-#### 4. data/mongodb以下のファイルがホストと同じUID/GIDで作成されていることを確認
+#### 3. MongoDBにログインできることを確認する
 
 ```
-~/install-rootless-podman/test_mongodb$ ls -l data/mongodb/ | head -4
-total 348
--rw------- 1 mitsuhashi dbcls0001 20480 May  2 11:20 collection-0--247210045027023696.wt
--rw------- 1 mitsuhashi dbcls0001 36864 May  2 11:21 collection-2--247210045027023696.wt
--rw------- 1 mitsuhashi dbcls0001  4096 May  2 10:48 collection-4--247210045027023696.wt
-~/install-rootless-podman/test_mongodb$
+./podman_exec_mongodb.sh
 ```
 
-#### 5. mongodbにログインできることを確認する
+実行している内容は以下です。
 
 ```
-$ podman exec -it mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
-{
-  db: 'test',
-  collections: Long('0'),
-  views: Long('0'),
-  objects: Long('0'),
-  avgObjSize: 0,
-  dataSize: 0,
-  storageSize: 0,
-  indexes: Long('0'),
-  indexSize: 0,
-  totalSize: 0,
-  scaleFactor: Long('1'),
-  fsUsedSize: 0,
-  fsTotalSize: 0,
-  ok: 1
-}
-$
+podman exec -it mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
 ```
 
-#### 6. podmanコンテナを停止して削除する
+#### 4. systemd user serviceを配置する
+
+OS再起動時に `test_mongodb/podman-compose.yml` を自動起動するため、サンプルの service ファイルを配置します。
 
 ```
-$ podman stop mongodb_rootless
-mongodb_rootless
-~/install-rootless-podman/test_mongodb$ podman ps
-CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
-$ podman ps -a
-CONTAINER ID  IMAGE                        COMMAND     CREATED        STATUS                    PORTS                     NAMES
-0536d66eaac4  docker.io/library/mongo:7.0  mongod      3 minutes ago  Exited (0) 8 seconds ago  0.0.0.0:37017->37017/tcp  mongodb_rootless
-$ podman rm mongodb_rootless
-mongodb_rootless
-$ podman ps -a
-CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
-$
+mkdir -p ~/.config/systemd/user
+cp ~/install-rootless-podman/test_mongodb/podman-compose-mongodb.service ~/.config/systemd/user/
+```
+
+service ファイルの内容は以下です。
+
+```ini
+[Unit]
+Description=Podman Compose mongodb
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/install-rootless-podman/test_mongodb
+ExecStartPre=/usr/bin/mkdir -p %h/install-rootless-podman/test_mongodb/data/mongodb
+ExecStart=%h/.local/bin/podman-compose up -d
+ExecStop=%h/.local/bin/podman-compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=default.target
+```
+
+`%h` は rootlessユーザのホームディレクトリに展開されます。
+この例では、リポジトリを `~/install-rootless-podman` に配置している前提です。別の場所に配置した場合は `WorkingDirectory` を変更してください。
+
+#### 5. 自動起動を有効化する
+
+```
+systemctl --user daemon-reload
+systemctl --user enable --now podman-compose-mongodb.service
+```
+
+状態を確認します。
+
+```
+systemctl --user status podman-compose-mongodb.service
+podman ps
+```
+
+#### 6. OS再起動後に確認する
+
+OSを再起動した後、rootlessユーザでログインして確認します。
+
+```
+podman ps
+systemctl --user status podman-compose-mongodb.service
+```
+
+MongoDBコンテナが起動していれば設定完了です。
+
+#### 7. MongoDBを停止して削除する
+
+手動で停止する場合は以下を実行します。
+
+```
+cd ~/install-rootless-podman/test_mongodb
+./podman_stop_rm_mongodb.sh
+```
+
+実行している内容は以下です。
+
+```
+#!/bin/sh
+set -eu
+
+podman-compose down
+```
+
+自動起動も無効化する場合は以下を実行します。
+
+```
+systemctl --user disable --now podman-compose-mongodb.service
+```
+
+#### 8. podman-compose.ymlを追加した場合
+
+新しい `podman-compose.yml` を追加した場合は、そのcomposeプロジェクト用に別の service ファイルを作成します。
+
+例:
+
+```
+~/install-rootless-podman/test_mongodb -> podman-compose-mongodb.service
+~/podman-apps/nextcloud               -> podman-compose-nextcloud.service
+~/podman-apps/gitea                   -> podman-compose-gitea.service
+```
+
+各 service について、一度だけ以下を実行します。
+
+```
+systemctl --user daemon-reload
+systemctl --user enable --now <service-name>
+```
+
+`podman-compose.yml` の内容だけを変更した場合は、通常は service を enable し直す必要はありません。以下のように restart します。
+
+```
+systemctl --user restart podman-compose-mongodb.service
 ```

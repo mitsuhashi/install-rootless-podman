@@ -1,0 +1,16 @@
+[Unit]
+Description=Podman Compose mongodb
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/install-rootless-podman/test_mongodb
+ExecStartPre=/usr/bin/mkdir -p %h/install-rootless-podman/test_mongodb/data/mongodb
+ExecStart=%h/.local/bin/podman-compose up -d
+ExecStop=%h/.local/bin/podman-compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=default.target
