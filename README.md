@@ -54,7 +54,7 @@ $
 
 ### podman-compose.ymlをOS再起動時に自動起動する設定
 
-`podman-compose up -d` で起動しただけでは、OS再起動後に自動で再起動されません。
+`podman-compose --in-pod false up -d` で起動しただけでは、OS再起動後に自動で再起動されません。
 自動起動したい `podman-compose.yml` ごとに、rootlessユーザの systemd user service を作成して有効化します。
 
 このリポジトリでは、`test_mongodb` を podman-compose のサンプルとして用意しています。
@@ -73,7 +73,7 @@ cat podman-compose.yml
 services:
   mongodb:
     image: docker.io/library/mongo:7.0
-    container_name: mongodb_rootless
+    container_name: test_mongodb_rootless
     userns_mode: keep-id
     ports:
       - "37017:27017"
@@ -103,7 +103,7 @@ cd ~/install-rootless-podman/test_mongodb
 set -eu
 
 mkdir -p ./data/mongodb
-podman-compose up -d
+podman-compose --in-pod false up -d
 ```
 
 `podman ps` でコンテナが起動していることを確認します。
@@ -121,7 +121,7 @@ podman ps
 実行している内容は以下です。
 
 ```
-podman exec -it mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
+podman exec -it test_mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
 ```
 
 #### 4. systemd user serviceを配置する
@@ -146,8 +146,8 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=%h/install-rootless-podman/test_mongodb
 ExecStartPre=/usr/bin/mkdir -p %h/install-rootless-podman/test_mongodb/data/mongodb
-ExecStart=%h/.local/bin/podman-compose up -d
-ExecStop=%h/.local/bin/podman-compose down
+ExecStart=%h/.local/bin/podman-compose --in-pod false up -d
+ExecStop=%h/.local/bin/podman-compose --in-pod false down
 TimeoutStartSec=0
 
 [Install]
@@ -197,7 +197,7 @@ cd ~/install-rootless-podman/test_mongodb
 #!/bin/sh
 set -eu
 
-podman-compose down
+podman-compose --in-pod false down
 ```
 
 自動起動も無効化する場合は以下を実行します。
@@ -206,7 +206,41 @@ podman-compose down
 systemctl --user disable --now podman-compose-mongodb.service
 ```
 
-#### 8. podman-compose.ymlを追加した場合
+#### 8. podman-compose.ymlとserviceを削除する場合
+
+`podman-compose.yml` を削除する場合は、先に自動起動を無効化してコンテナを停止します。
+`podman-compose.yml` を先に削除すると、`podman-compose down` や systemd の `ExecStop` が失敗する場合があります。
+
+`test_mongodb` の例では以下の順序で実行します。
+
+```
+systemctl --user disable --now podman-compose-mongodb.service
+cd ~/install-rootless-podman/test_mongodb
+podman-compose --in-pod false down
+rm -f ~/.config/systemd/user/podman-compose-mongodb.service
+systemctl --user daemon-reload
+```
+
+その後、不要であれば `podman-compose.yml` を削除します。
+
+```
+rm -f ~/install-rootless-podman/test_mongodb/podman-compose.yml
+```
+
+MongoDBのデータも削除する場合のみ、データディレクトリを削除します。
+
+```
+rm -rf ~/install-rootless-podman/test_mongodb/data/mongodb
+```
+
+削除後に状態を確認します。
+
+```
+systemctl --user status podman-compose-mongodb.service
+podman ps -a
+```
+
+#### 9. podman-compose.ymlを追加した場合
 
 新しい `podman-compose.yml` を追加した場合は、そのcomposeプロジェクト用に別の service ファイルを作成します。
 
