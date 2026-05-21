@@ -1,7 +1,7 @@
 services:
   mongodb:
     image: docker.io/library/mongo:7.0
-    container_name: mongodb_rootless
+    container_name: test_mongodb_rootless
     userns_mode: keep-id
     ports:
       - "37017:27017"

@@ -8,8 +8,8 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=%h/install-rootless-podman/test_mongodb
 ExecStartPre=/usr/bin/mkdir -p %h/install-rootless-podman/test_mongodb/data/mongodb
-ExecStart=%h/.local/bin/podman-compose up -d
-ExecStop=%h/.local/bin/podman-compose down
+ExecStart=%h/.local/bin/podman-compose --in-pod false up -d
+ExecStop=%h/.local/bin/podman-compose --in-pod false down
 TimeoutStartSec=0
 
 [Install]

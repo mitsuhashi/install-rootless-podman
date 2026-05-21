@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 
-podman-compose down
+podman-compose --in-pod false down

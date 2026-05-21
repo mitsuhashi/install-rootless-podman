@@ -2,4 +2,4 @@
 set -eu
 
 mkdir -p ./data/mongodb
-podman-compose up -d
+podman-compose --in-pod false up -d
