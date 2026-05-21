@@ -17,8 +17,10 @@ Podmanを実行するユーザで以下のansible-playbookコマンドを実行�
 ```
 ansible-playbook -v -i localhost, -c local install_rootless_podman_by_root.yml
 ```
-以下の設定を行います。root権限を持つ管理者が設定する場合は実行不要です。
+以下の設定を行います。root権限を持つ管理者が同等の設定を別途行う場合は、このplaybookの実行は不要です。
 - パッケージのインストール(podman, crun, pipx, python3-venv)
+- Podmanを実行するユーザの linger 有効化
+- Podmanを実行するユーザの systemd user manager 起動
 - Podmanを実行するユーザの/etc/subuidと/etc/subgidへのエントリの追加
 （例）mitsuhashiユーザの場合
 ```

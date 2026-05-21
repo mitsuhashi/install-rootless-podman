@@ -5,12 +5,6 @@
     - name: Get rootless user using whoami
       set_fact:
         rootless_user: "{{ lookup('pipe', 'whoami') }}"
-        rootless_user_uid: "{{ lookup('pipe', 'id -u') }}"
-        rootless_user_gid: "{{ lookup('pipe', 'id -g') }}"
-        subuid_file: /etc/subuid
-        subgid_file: /etc/subgid
-        default_range_start: 100000
-        range_size: 65536 
 
     - name: Ensure pipx is in PATH
       shell: "pipx ensurepath"
