@@ -124,47 +124,32 @@ podman ps
 podman exec -it test_mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
 ```
 
-#### 4. systemd user serviceを配置する
+#### 4. systemd user serviceを作成して自動起動を有効化する
 
-OS再起動時に `test_mongodb/podman-compose.yml` を自動起動するため、サンプルの service ファイルを配置します。
-
-```
-mkdir -p ~/.config/systemd/user
-cp ~/install-rootless-podman/test_mongodb/podman-compose-mongodb.service ~/.config/systemd/user/
-```
-
-service ファイルの内容は以下です。
-
-```ini
-[Unit]
-Description=Podman Compose mongodb
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=%h/install-rootless-podman/test_mongodb
-ExecStartPre=/usr/bin/mkdir -p %h/install-rootless-podman/test_mongodb/data/mongodb
-ExecStart=%h/.local/bin/podman-compose --in-pod false up -d
-ExecStop=%h/.local/bin/podman-compose --in-pod false down
-TimeoutStartSec=0
-
-[Install]
-WantedBy=default.target
-```
-
-`%h` は rootlessユーザのホームディレクトリに展開されます。
-この例では、リポジトリを `~/install-rootless-podman` に配置している前提です。別の場所に配置した場合は `WorkingDirectory` を変更してください。
-
-#### 5. 自動起動を有効化する
+OS再起動時に `test_mongodb/podman-compose.yml` を自動起動するため、serviceを作成して有効化します。
+service名は引数で指定できます。`.service` は付けても付けなくても構いません。
 
 ```
-systemctl --user daemon-reload
-systemctl --user enable --now podman-compose-mongodb.service
+cd ~/install-rootless-podman/test_mongodb
+./podman_enable_service.sh podman-compose-mongodb
 ```
 
-状態を確認します。
+引数を省略した場合も、service名は `podman-compose-mongodb.service` になります。
+
+```
+./podman_enable_service.sh
+```
+
+スクリプトは以下を実行します。
+
+- `~/.config/systemd/user/<service-name>.service` を作成
+- `systemctl --user daemon-reload` を実行
+- `systemctl --user enable --now <service-name>.service` を実行
+
+作成されるserviceファイルは、スクリプトを実行した環境の `test_mongodb` ディレクトリと `podman-compose` のパスを使います。
+そのため、リポジトリを `~/install-rootless-podman` 以外に配置している場合でも、その配置先に合わせたserviceファイルが作成されます。
+
+#### 5. 自動起動の状態を確認する
 
 ```
 systemctl --user status podman-compose-mongodb.service
@@ -211,7 +196,7 @@ systemctl --user disable --now podman-compose-mongodb.service
 `podman-compose.yml` を削除する場合は、先に自動起動を無効化してコンテナを停止します。
 `podman-compose.yml` を先に削除すると、`podman-compose down` や systemd の `ExecStop` が失敗する場合があります。
 
-`test_mongodb` の例では以下の順序で実行します。
+`test_mongodb` の例では以下の順序で実行します。サービス名を変更して登録した場合は、`podman-compose-mongodb.service` を実際のservice名に置き換えてください。
 
 ```
 systemctl --user disable --now podman-compose-mongodb.service
@@ -252,7 +237,7 @@ podman ps -a
 ~/podman-apps/gitea                   -> podman-compose-gitea.service
 ```
 
-各 service について、一度だけ以下を実行します。
+各 service について、serviceファイルを作成した後に一度だけ以下を実行します。`test_mongodb` の場合は `podman_enable_service.sh <service-name>` がこの作業まで実行します。
 
 ```
 systemctl --user daemon-reload
