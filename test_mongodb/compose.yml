@@ -1,0 +1,15 @@
+x-podman:
+  in_pod: false
+
+services:
+  mongodb:
+    image: docker.io/library/mongo:7.0
+    userns_mode: keep-id
+    ports:
+      - "127.0.0.1:${MONGODB_PORT:-37017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set MONGO_INITDB_ROOT_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD in .env}
+    volumes:
+      - ./data/mongodb:/data/db:Z
+    restart: always

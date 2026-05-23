@@ -1,271 +1,279 @@
 # install-rootless-podman
-Ansible playbooks for installing rootless Podman on Ubuntu 24.04 LTS
 
-### 前提
+Ubuntu 24.04 LTS で rootless Podman と podman-compose を使うためのセットアップ手順と Ansible playbook です。
 
-- Ubuntu 24.04 LTSで動作します。Ubuntu 22.04 LTSでは動作しません。
-- PodmanをインストールしたいUbuntu OSに**Rootless Podmanを実行するユーザでログインした状態で実行**します。
-- インストールにAnsibleが必要です。インストールされていない場合は以下のコマンドでインストールします。
+## 前提
+
+- Ubuntu 24.04 LTS で動作します。Ubuntu 22.04 LTS は対象外です。
+- rootless Podman を実行するユーザでログインして作業します。
+- root 権限が必要な作業は、root ユーザまたは sudo 権限を持つユーザで実行します。
+- ストレージ保存先は Podman のデフォルトを使います。このリポジトリでは `~/.config/containers/storage.conf` を自動作成しません。
+
+## root ユーザが手動で行う設定
+
+Ansible を使わずに管理者が手動設定する場合は、root ユーザで以下を実行します。`<user>` は rootless Podman を使うユーザ名に置き換えてください。
+
+### 1. パッケージをインストールする
+
+```sh
+apt update
+apt install -y podman crun fuse-overlayfs pipx python3-venv
 ```
+
+### 2. subuid / subgid を設定する
+
+既存の割り当てを確認します。
+
+```sh
+grep '^<user>:' /etc/subuid /etc/subgid
+```
+
+エントリがない場合は追加します。開始値は既存ユーザと重ならない範囲を選んでください。
+
+```sh
+echo '<user>:100000:65536' >> /etc/subuid
+echo '<user>:100000:65536' >> /etc/subgid
+```
+
+複数ユーザに設定する場合は、開始値をユーザごとにずらします。
+
+```text
+user1:100000:65536
+user2:165536:65536
+user3:231072:65536
+```
+
+### 3. linger を有効化する
+
+OS 起動時に rootless ユーザの systemd user manager を起動できるようにします。
+
+```sh
+loginctl enable-linger <user>
+```
+
+確認します。
+
+```sh
+loginctl show-user <user> --property=Linger
+```
+
+`Linger=yes` と表示されれば有効です。
+
+### 4. systemd user manager を起動する
+
+```sh
+uid=$(id -u <user>)
+systemctl start user@${uid}.service
+```
+
+D-Bus socket が作成されたことを確認します。
+
+```sh
+ls /run/user/${uid}/bus
+```
+
+### 5. podman-restart.service を有効化する
+
+`restart: always` が設定された rootless Podman コンテナを OS 再起動後に起動するため、対象ユーザの user systemd で `podman-restart.service` を有効化します。
+
+```sh
+uid=$(id -u <user>)
+sudo -iu <user> env \
+  XDG_RUNTIME_DIR=/run/user/${uid} \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus \
+  systemctl --user enable podman-restart.service
+```
+
+確認します。
+
+```sh
+sudo -iu <user> env \
+  XDG_RUNTIME_DIR=/run/user/${uid} \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus \
+  systemctl --user is-enabled podman-restart.service
+```
+
+`enabled` と表示されれば有効です。
+
+## Ansible で root 権限が必要な設定を行う
+
+上記の root 作業は `install_rootless_podman_by_root.yml` で実行できます。rootless Podman を使うユーザでログインし、sudo 権限がある状態で実行します。
+
+Ansible が未インストールの場合は先にインストールします。
+
+```sh
 sudo apt install ansible
 ```
 
-### インストール手順
+playbook を実行します。
 
-#### 1. sudo権限が必要な設定
-Podmanを実行するユーザで以下のansible-playbookコマンドを実行します。ただし、当該ユーザにはsudo権限が付与されている必要があります。
-```
+```sh
 ansible-playbook -v -i localhost, -c local install_rootless_podman_by_root.yml
 ```
-以下の設定を行います。root権限を持つ管理者が同等の設定を別途行う場合は、このplaybookの実行は不要です。
-- パッケージのインストール(podman, crun, pipx, python3-venv)
-- Podmanを実行するユーザの linger 有効化
-- Podmanを実行するユーザの systemd user manager 起動
-- `systemctl --user` が rootless ユーザの D-Bus に接続できることの確認
-- Podmanを実行するユーザの/etc/subuidと/etc/subgidへのエントリの追加
-（例）mitsuhashiユーザの場合
-```
-$ grep mitsuhashi /etc/subuid
-mitsuhashi:100000:65536
-$ grep mitsuhashi /etc/subgid
-mitsuhashi:100000:65536
-```
 
-#### 2. sudo権限が不要な設定とpodmanの起動確認
-以下のansible-playbookコマンドを実行します。sudo権限が不要な設定を行い、podmanの起動確認を行います。
-```
+この playbook は以下を行います。
+
+- `podman`, `crun`, `fuse-overlayfs`, `pipx`, `python3-venv` のインストール
+- rootless ユーザの linger 有効化
+- rootless ユーザの systemd user manager 起動
+- `systemctl --user` が rootless ユーザの D-Bus に接続できることの確認
+- `podman-restart.service` の有効化
+- `/etc/subuid` と `/etc/subgid` へのエントリ追加
+
+## rootless ユーザで行う設定
+
+rootless Podman を使うユーザで以下を実行します。sudo 権限は不要です。
+
+```sh
 ansible-playbook -v -i localhost, -c local install_rootless_podman_by_rootless.yml
 ```
-以下のように"Podman is working!"を表示されれば成功です。
-```
-$ ansible-playbook -v -i localhost, -c local install_rootless_podman_by_rootless.yml
-<中略>
 
-TASK [Run a test container with Podman] *************************************************************************************************************************************
-changed: [localhost] => {"changed": true, "cmd": ["podman", "run", "--rm", "alpine", "echo", "Podman is working!"], "delta": "0:00:00.387262", "end": "2025-05-02 11:11:17.779712", "msg": "", "rc": 0, "start": "2025-05-02 11:11:17.392450", "stderr": "", "stderr_lines": [], "stdout": "Podman is working!", "stdout_lines": ["Podman is working!"]}
+この playbook は以下を行います。
 
-TASK [Display test container output] ****************************************************************************************************************************************
-ok: [localhost] => {
-    "msg": "Podman is working!"
-}
+- `podman-compose` の pipx インストール
+- `~/.config/containers/registries.conf` の作成
+- `~/.config/containers/containers.conf` で `crun` を runtime に設定
+- `podman system migrate` の実行
+- `podman run --rm alpine echo "Podman is working!"` による動作確認
 
-PLAY RECAP ******************************************************************************************************************************************************************
-localhost                  : ok=17   changed=4    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+`registries.conf` は Docker Hub を検索対象にするため、以下の内容で作成します。
 
-$
+```toml
+[registries.search]
+registries = ['docker.io']
 ```
 
-### podman-compose.ymlをOS再起動時に自動起動する設定
+ストレージ保存先は Podman のデフォルトを使います。保存先を変更したい環境では、必要に応じて `~/.config/containers/storage.conf` を別途設定してください。
 
-`podman-compose --in-pod false up -d` で起動しただけでは、OS再起動後に自動で再起動されません。
-自動起動したい `podman-compose.yml` ごとに、rootlessユーザの systemd user service を作成して有効化します。
+## MongoDB サンプル
 
-このリポジトリでは、`test_mongodb` を podman-compose のサンプルとして用意しています。
-以下の作業は、Podmanを実行するrootlessユーザで実行します。sudo権限は不要です。
+`test_mongodb` は rootless Podman と podman-compose の動作確認用サンプルです。
 
-#### 1. test_mongodb/podman-compose.ymlの確認
+### 1. compose.yml を確認する
 
-```
+```sh
 cd ~/install-rootless-podman/test_mongodb
-cat podman-compose.yml
+cat compose.yml
 ```
-
-`test_mongodb/podman-compose.yml` では、MongoDBをrootless Podmanで起動します。
 
 ```yaml
+x-podman:
+  in_pod: false
+
 services:
   mongodb:
     image: docker.io/library/mongo:7.0
-    container_name: test_mongodb_rootless
     userns_mode: keep-id
     ports:
-      - "37017:27017"
+      - "127.0.0.1:${MONGODB_PORT:-37017}:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set MONGO_INITDB_ROOT_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD in .env}
     volumes:
       - ./data/mongodb:/data/db:Z
-    restart: unless-stopped
+    restart: always
 ```
 
-- `userns_mode: keep-id` でコンテナ内のUID/GIDをホストのUID/GIDと対応させます。
-- DBファイルは `test_mongodb/data/mongodb` 以下に作成されます。
-- `restart: unless-stopped` はコンテナ異常終了時の再起動用です。OS再起動後の起動には、後述の systemd user service が必要です。
+ポイント:
 
-#### 2. podman-composeでMongoDBを起動する
+- `userns_mode: keep-id` でコンテナ内の UID/GID をホストの UID/GID と対応させます。
+- `userns_mode: keep-id` と pod 作成は同時に使えないため、`x-podman.in_pod: false` を指定します。
+- DB ファイルは `test_mongodb/data/mongodb` 以下に作成されます。
+- `restart: always` により、`podman-restart.service` が有効な環境では OS 再起動後の自動起動対象になります。
+- サンプルの公開ポートは `127.0.0.1` に限定しています。別ホストから接続する必要がある場合は、リバースプロキシや SSH トンネルを使うか、意図を確認したうえでバインドアドレスを変更してください。
 
+### 2. .env を作成する
+
+```sh
+cd ~/install-rootless-podman/test_mongodb
+cp env.example .env
+# 必要に応じて .env を編集
 ```
+
+### 3. MongoDB を起動する
+
+```sh
 cd ~/install-rootless-podman/test_mongodb
 ./podman_run_mongodb.sh
 ```
 
-実行している内容は以下です。
+スクリプトは以下を実行します。
 
-```
-#!/bin/sh
-set -eu
-
+```sh
 mkdir -p ./data/mongodb
-podman-compose --in-pod false up -d
+podman-compose up -d
 ```
 
-`podman ps` でコンテナが起動していることを確認します。
+### 4. 起動状態を確認する
 
-```
+```sh
 podman ps
+podman inspect --format '{{.Name}} {{.HostConfig.RestartPolicy.Name}}' test_mongodb_mongodb_1
+systemctl --user is-enabled podman-restart.service
+loginctl show-user $(whoami) --property=Linger
 ```
 
-#### 3. MongoDBにログインできることを確認する
+期待値:
 
+```text
+test_mongodb_mongodb_1 always
+enabled
+Linger=yes
 ```
+
+### 5. MongoDB にログインする
+
+```sh
 ./podman_exec_mongodb.sh
 ```
 
-実行している内容は以下です。
+スクリプトは `.env` を読み込んで、以下を実行します。
 
+```sh
+podman-compose exec mongodb mongosh -u "${MONGO_INITDB_ROOT_USERNAME:-root}" -p "${MONGO_INITDB_ROOT_PASSWORD:-example}" --eval 'db.stats()'
 ```
-podman exec -it test_mongodb_rootless mongosh -u root -p example --eval 'db.stats()'
-```
 
-#### 4. systemd user serviceを作成して自動起動を有効化する
+### 6. OS 再起動後に確認する
 
-OS再起動時に `test_mongodb/podman-compose.yml` を自動起動するため、serviceを作成して有効化します。
-service名は引数で指定できます。`.service` は付けても付けなくても構いません。
+OS を再起動した後、rootless ユーザでログインして確認します。
 
-```
+```sh
 cd ~/install-rootless-podman/test_mongodb
-./podman_enable_service.sh podman-compose-mongodb
-```
-
-引数を省略した場合も、service名は `podman-compose-mongodb.service` になります。
-
-```
-./podman_enable_service.sh
-```
-
-スクリプトは以下を実行します。
-
-`su` や `sudo -u` などでログインセッション外から実行する場合は、事前に以下を設定してください。通常のSSHログインやコンソールログインで rootless ユーザとして実行する場合は不要です。
-
-```
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
-export DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR}/bus
-```
-
-- `~/.config/systemd/user/<service-name>.service` を作成
-- `systemctl --user daemon-reload` を実行
-- `systemctl --user enable --now <service-name>.service` を実行
-
-作成されるserviceファイルは、スクリプトを実行した環境の `test_mongodb` ディレクトリと `podman-compose` のパスを使います。
-そのため、リポジトリを `~/install-rootless-podman` 以外に配置している場合でも、その配置先に合わせたserviceファイルが作成されます。
-
-#### 5. 自動起動の状態を確認する
-
-```
-systemctl --user status podman-compose-mongodb.service
 podman ps
+./podman_exec_mongodb.sh
 ```
 
-#### 6. OS再起動後に確認する
+MongoDB コンテナが起動していれば設定完了です。
 
-OSを再起動した後、rootlessユーザでログインして確認します。
+### 7. MongoDB を停止して削除する
 
-```
-podman ps
-systemctl --user status podman-compose-mongodb.service
-```
-
-MongoDBコンテナが起動していれば設定完了です。
-
-#### 7. MongoDBを停止して削除する
-
-手動で停止する場合は以下を実行します。
-
-```
+```sh
 cd ~/install-rootless-podman/test_mongodb
 ./podman_stop_rm_mongodb.sh
 ```
 
-実行している内容は以下です。
-
-```
-#!/bin/sh
-set -eu
-
-podman-compose --in-pod false down
-```
-
-自動起動も無効化する場合は以下を実行します。
-
-```
-systemctl --user disable --now podman-compose-mongodb.service
-```
-
-#### 8. podman-compose.ymlとserviceを削除する場合
-
-`podman-compose.yml` を削除する場合は、先に自動起動を無効化してコンテナを停止します。
-`podman-compose.yml` を先に削除すると、`podman-compose down` や systemd の `ExecStop` が失敗する場合があります。
-
-`test_mongodb` の例では以下を実行します。サービス名を変更して登録した場合は、実際のservice名を引数に指定してください。
-
-```
-cd ~/install-rootless-podman/test_mongodb
-./podman_disable_service.sh podman-compose-mongodb
-```
-
-引数を省略した場合も、service名は `podman-compose-mongodb.service` になります。
-
-```
-./podman_disable_service.sh
-```
-
 スクリプトは以下を実行します。
 
-- `systemctl --user disable --now <service-name>.service` を実行
-- `podman-compose --in-pod false down` を実行
-- `~/.config/systemd/user/<service-name>.service` を削除
-- `systemctl --user daemon-reload` を実行
-
-MongoDBのデータも削除する場合のみ、`--remove-data` を指定します。
-
-```
-./podman_disable_service.sh --remove-data podman-compose-mongodb
+```sh
+podman-compose down
 ```
 
-その後、不要であれば `podman-compose.yml` を削除します。
+MongoDB のデータも削除する場合のみ、以下を実行します。
 
-```
-rm -f ~/install-rootless-podman/test_mongodb/podman-compose.yml
-```
-
-削除後に状態を確認します。
-
-```
-systemctl --user status podman-compose-mongodb.service
-podman ps -a
+```sh
+rm -rf ~/install-rootless-podman/test_mongodb/data/mongodb
 ```
 
-#### 9. podman-compose.ymlを追加した場合
+## compose.yml を追加する場合
 
-新しい `podman-compose.yml` を追加した場合は、そのcomposeプロジェクト用に別の service ファイルを作成します。
+新しい compose プロジェクトを追加する場合も、個別の user systemd service は作成しません。各 `compose.yml` に `restart: always` を指定し、`podman-compose up -d` でコンテナを作成します。
 
-例:
+`podman-restart.service` は `install_rootless_podman_by_root.yml` で有効化済みのため、必要に応じて以下で状態を確認します。
 
-```
-~/install-rootless-podman/test_mongodb -> podman-compose-mongodb.service
-~/podman-apps/nextcloud               -> podman-compose-nextcloud.service
-~/podman-apps/gitea                   -> podman-compose-gitea.service
+```sh
+systemctl --user is-enabled podman-restart.service
 ```
 
-各 service について、serviceファイルを作成した後に一度だけ以下を実行します。`test_mongodb` の場合は `podman_enable_service.sh <service-name>` がこの作業まで実行します。
+## 参考
 
-```
-systemctl --user daemon-reload
-systemctl --user enable --now <service-name>
-```
-
-`podman-compose.yml` の内容だけを変更した場合は、通常は service を enable し直す必要はありません。以下のように restart します。
-
-```
-systemctl --user restart podman-compose-mongodb.service
-```
+- [nig-podman](https://github.com/suecharo/nig-podman) - rootless Podman / podman-compose の運用方針、`compose.yml`、`restart: always`、`podman-restart.service` の使い方を参考にしています。
