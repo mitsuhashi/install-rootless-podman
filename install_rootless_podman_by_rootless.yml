@@ -26,7 +26,7 @@
         dest: "/home/{{ rootless_user }}/.config/containers/registries.conf"
         content: |
           [registries.search]
-          registries = ['docker.io', 'quay.io', 'registry.fedoraproject.org']
+          registries = ['docker.io']
       become: no
 
     - name: Configure Podman to use crun

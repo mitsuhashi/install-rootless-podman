@@ -23,6 +23,7 @@
         name:
           - podman
           - crun
+          - fuse-overlayfs
           - pipx
           - python3-venv  # pipx の実行に必要
         state: present
@@ -57,6 +58,13 @@
         DBUS_SESSION_BUS_ADDRESS: "{{ rootless_dbus_session_bus_address }}"
       register: systemd_user_status
       changed_when: false
+
+    - name: Enable podman-restart.service for rootless user
+      command: systemctl --user enable podman-restart.service
+      become: no
+      environment:
+        XDG_RUNTIME_DIR: "{{ rootless_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "{{ rootless_dbus_session_bus_address }}"
 
     - name: Read existing subuid content
       slurp:
